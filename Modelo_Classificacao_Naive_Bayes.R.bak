@@ -1,0 +1,129 @@
+
+## instalação dos pacotes
+
+install.packages("e1071")
+
+## import
+
+library(e1071)
+
+## colocar as referências
+
+Anatel_Consolidado_Nicolas <- read_delim("C:/DATA SCIENCE/INFNET/V1 - 25_05_19/ANATEL/Anatel_Consolidado_Nicolas.csv", 
+      ";", escape_double = FALSE, col_types = cols(DataExtracao = col_date(format = "%Y-%m-%d")), 
+     locale = locale(encoding = "ISO-8859-1"), 
+     trim_ws = TRUE)
+
+## fazendo uma cópia do dataframe
+
+df_anatel <- Anatel_Consolidado_Nicolas
+
+## substituindo o atributo "Reencaminhada" para "Nova"
+
+df_anatel$Condicao[df_anatel$Condicao == "Reencaminhada"] <- "Nova" # substitutindo
+
+## para analisar os dados da Anatel resolvi escolher o algoritmo naive bayes pois é um algoritmo apropriado para este tipo
+## de dataframe por tratar-se de uma classificação além de analisar bem problemas com caractere numérico.
+
+## sua análise é feita através de probabilidades considerando que as variáveis vão influenciar o evento de forma
+## independente. por isso o data frame e o resultado final do algoritmo deve ser bem analisado pois na vida real dificilmente
+## os fatos irão ocorrer de forma independente.
+
+## Aplicando o algoritmo. Dividindo os dados de teste e treino
+
+library(e1071)
+set.seed(1)
+amostra <- sample(2,4613209, replace = T, prob = c(0.7, 0.3))
+anatelTreino <- df_anatel[amostra == 1,]
+anatelteste <- df_anatel[amostra ==2,]
+
+## Aplicando o algoritmo
+
+modelo <- naiveBayes(as.factor(Condicao) ~ GrupoEconNorm + CanalEntrada + Tipo + Servico + Modalidade + Motivo + Motivo_Aglutinado + UF + QtdeSolic, anatelTreino)
+
+modelo
+class(modelo)
+predicao <- predict(modelo, anatelteste[-5])
+predicao
+confusao <- table(anatelteste$Condicao, predicao)
+confusao
+taxaacerto <- (confusao[1] + confusao[4]) / sum(confusao)
+taxaacerto
+
+
+## tive problemas de coerção neste ponto. Tive que transformar as variáveis em factor. isso resolveu o problema
+
+## Transformando os dados em factor exceto QtdeSolic
+
+df_anatel$Ano <- factor(as.factor(df_anatel$Ano))
+df_anatel$Mes <- factor(as.factor(df_anatel$Mes))
+df_anatel$CanalEntrada <- factor(as.factor(df_anatel$CanalEntrada))
+df_anatel$Condicao <- factor(as.factor(df_anatel$Condicao))
+df_anatel$GrupoEconNorm <- factor(as.factor(df_anatel$GrupoEconNorm))
+df_anatel$Tipo <- factor(as.factor(df_anatel$Tipo))
+df_anatel$Servico <- factor(as.factor(df_anatel$Servico))
+df_anatel$Motivo <- factor(as.factor(df_anatel$Motivo))
+df_anatel$Modalidade <- factor(as.factor(df_anatel$Modalidade))
+df_anatel$UF <- factor(as.factor(df_anatel$UF))
+df_anatel$Motivo_Aglutinado <- factor(as.factor(df_anatel$Motivo_Aglutinado))
+
+str(df_anatel)
+
+## Aplicando o modelo com todas as variáveis a taxa de acerto ficou em 46,28%
+
+## Retirando a variavel QtdeSolic a performance ficou em 77,86%
+
+modelo <- naiveBayes(as.factor(Condicao) ~ GrupoEconNorm + CanalEntrada + Tipo + Servico + Modalidade + Motivo + Motivo_Aglutinado + UF, anatelTreino)
+
+## retirando a variável QtdeSolic e tipo a performance fica em 77,90% porém o número de acertos em reabertura cai em torno de 30%
+
+modelo <- naiveBayes(as.factor(Condicao) ~ GrupoEconNorm + CanalEntrada + Servico + Modalidade + Motivo + Motivo_Aglutinado + UF, anatelTreino)
+
+## Após vários testes observamos que retirando qualquer outra variável a performance vai ficar em torno de 78%.
+## A maior variação fica concentrada nos acertos em reabertura 
+
+## Para alcançar o nosso objetivo devemos adotar o modelo sem a variável QtdeSolic pois o algoritmo apresenta uma performance maior 
+
+## variável QtdeSolic
+
+## Ela indica a quantidade de abertura de chamados durante o dia e fornece uma repetição de um mesmo problema pelos 
+## mesmos atributos. Ao retirá-la estamos considerando importante somente os motivos que levaram a abertura de um 
+## chamado e não a quantidade de chamados do dia. Pois se considerarmos a quantidade poderemos estar cometendo um 
+## erro pois vários chamados podem ter sido abertos e reabertos pelo mesmo problema o que daria um peso maior porém 
+## falseando a análise.
+
+## Problemas específicos em uma determinada região, município ou bairro pode gerar vários chamados em um só dia para o mesmo problema para
+## uma determinada operadora e criar outliers. Se os dados da anatel indicassem bairros ou cidades poderíamos 
+## identificar os ouliers mas como só estão disponíveis os dados dos estados, fica inviável a identificação e isso torna
+## um problema micro em um problema macro demais.
+
+## Dentre os problemas que devemos levar em consideração podemos citar: rompimento de cabos, furtos de cabos, 
+## falta de manutenção, desastres ambientais (queda de árvores, alagamentos, incêndios etc), apagão de luz, queda 
+## de raios, manutenções preventivas, ampliações da rede entre outros.
+
+## Outro motivo para desconsiderar a variável QtdeSolic esta no cálculo de probabilidade condicional do naive bayes 
+## que atribui um peso desproporcional em relação as outras variáveis
+## A probabilidade condicional calculada pelo algoritmo para situação "Nova" foi de 53.53 sendo que para os demais
+## atributos variaram entre 0.0 a 9.6
+## Esse peso influencia diretamente no resultado final do cálculo pois no cálculo de probabilidade posterior a classe 
+## indicada sera a de maior valor.
+
+## Problemas da variável "QtdeSolic" no funcionamento do naive bayes com relação as outras variáveis pois ele vai ajustar a quantidade de abertura 
+## do dia com peso para as variáveis vinculadas, o que não é verdade se considerarmos fatores externos.
+
+## Dando importância a quantidades de solicitações durante um dia para um certo motivo, estamos reforçando a 
+## teoria do naive bayes sobre a independência dos atributos, o que prejudica a performance do algoritmo.
+
+## O classificador Naive Bayes possui uma adaptação para dados numéricos que é referida como Gaussian Naive Bayes. 
+## Para este tipo de variável, o algoritmo assume que a mesma possui uma distribuição Gaussiana ou normal.
+## A distribuição gaussiana é uma curva simétrica em torno do seu ponto médio, apresentando assim seu famoso 
+## formato de sino, que é uma forte suposição.
+
+## Com o histograma podemos ver a distribuição dos dados coletados a cada dia e que irá representar uma distribuição 
+## diferente da normal. 
+## Para transformar em uma distribuição normal, os dados podem ser agrupados mensalmente, calculando a média 
+## de aberturas de chamados por dia utilizando o valor da média diária para gerar um novo histograma. Desta vez 
+## a distribuição será normal.
+
+## Por este motivo sugiro não considerar a quantidade de ocorrências dos dias e sim as causas.
+
